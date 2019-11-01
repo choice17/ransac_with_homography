@@ -117,6 +117,23 @@ def wrapPerspective(img, H, convert='nn'):
     img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
     return img_n, min_x, min_y
 
+
+def transformImage(img, u, v, method='bilinear'):
+    """ transformImage
+    @brief: Homography perspective transform from u to v
+    @[in] img: numpy image MxNx3
+    @[in] u:   src 4 corners 3xn
+    @[in] v:   dest 4 corners 3xn
+    @[in] method: interpolation method:nn/bilinear
+    @[out] o:  transformed image
+    """
+    H = calcHomographyLinear(u.T[:,:2], v.T[:,:2])
+    imgn, mx, my = wrapPerspective(img, H, convert=method) 
+    imgn = imgn.astype(np.uint8)
+    sx = int(v[0,0]-mx); sy = int(v[1,0]-my)
+    ex = int(v[0,2]-mx); ey = int(v[1,2]-my)
+    return imgn[sy:ey+1, sx:ex+1,:]
+
 def main():
     imgFile = 'notebook.jpg'
     img = cv2.imread(imgFile)

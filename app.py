@@ -6,14 +6,45 @@ import tkinter.filedialog as F
 import threading as pthread
 import os
 import time
+from homography import transformImage
+
+debugLvl = 0.5 
+
 WIN = 'app'
-H,W,C = 400,300,3
+WINT = 'transform'
 TIME_MAX = 5
+H, W, C = 400, 500, 3
+class SIZE_S(object):
+    A4 = 297 * 4, 210 * 4
+    F4 = 330 * 4, 210 * 4
+    CARD = 53.98 * 4, 85.6 * 4 
+
+
+def INFO(*args):
+    if debugLvl >= 0:
+        print("[INFO] ", *args)
+
+def INFOH(*args):
+    if debugLvl >= 0.5:
+        print("[INFOH] ", *args)
+
+def WARN(*args):
+    if debugLvl >= 1:
+        print("[WARN] ", *args)
+
+def DEBUG(*args):
+    if debugLvl >= 2:
+        print("[DEBUG] ", *args)
+
+def ERR(*args):
+    if debugLvl >= 0:
+        print("[ERR] ", *args)
 
 class Control(object):
     def __init__(self):
         self.app_quit = 0
         self.cv_quit = 0
+        self.cvt_quit = 0
         self.img_name = None
         self.img = None
         self.oimg = None
@@ -30,7 +61,7 @@ class App(object):
                                filetypes =(("Image Files","*.jpg"),("All Files","*.*"),),
                                title = "Choose a file."
                                )
-        print("-%s-" % name)
+        INFOH("-%s-" % name)
         if os.path.exists(name):
         #Using try in case user types in unknown file or closes without choosing a file.
             try:
@@ -38,12 +69,12 @@ class App(object):
                 g_ctx.img = cv2.imread(name)
                     #print(UseFile.read())
             except:
-                print("No file exists")
+                WARN("No file exists")
             if (self.cv_app_up):
                 g_ctx.cv_quit = 1
                 self.cv_app.join()
                 self.cv_app_up = 0
-                print("turn off image")
+                DEBUG("turn off image")
 
             cb.cur_time = 0
             g_ctx.cv_quit = 0
@@ -51,22 +82,42 @@ class App(object):
             self.cv_app = pthread.Thread(target=self.cvapp.run, args=(cb,))
             self.cv_app.start()
             self.cv_app_up = 1
-            print("start new session")
+            INFOH("start new session")
         else:
-            print("Cannot reach the file %s" % name)
+            ERR("Cannot reach the file %s" % name)
 
     def save(self):
-        filename =  F.asksaveasfilename(initialdir = os.getcwd(),title = "Select file",filetypes = (("jpeg files","*.jpg"),("all files","*.*")))
-        print("save to %s!" % filename)
+        if g_ctx.oimg is not None:
+            filename =  F.asksaveasfilename(initialdir = os.getcwd(),title = "Select file",filetypes = (("jpeg files","*.jpg"),("all files","*.*")))
+            try:
+                cv2.imwrite(filename, g_ctx.oimg)
+            except:
+                cv2.imwrite(filename + '.jpg', g_ctx.oimg)
+            INFO("save to %s!" % filename)
+        else:
+            INFO("Please apply transform image")
 
     def exit(self):
         self.win.destroy()
 
-    def scanner(self):
-        print("scanner mode")
+    def scanner(fmt):
+        global SCANNERV
+        SCANNERV = np.array([[0, int(fmt[1]), int(fmt[1]), 0],
+                      [0, 0,   int(fmt[0]), int(fmt[0])],
+                      [1,  1,  1,  1]])
+        WARN("scanner mode")
 
     def panorama(self):
-        print("panorama mode")
+        WARN("panorama mode")
+
+    def scannerA4(self):
+        App.scanner(SIZE_S.A4)
+
+    def scannerF4(self):
+        App.scanner(SIZE_S.F4)
+
+    def scannerCard(self):
+        App.scanner(SIZE_S.CARD)
 
     def run(self, mousecb):
         self.win = tk.Tk()
@@ -83,9 +134,13 @@ class App(object):
         self.filemenu.add_command(label='Exit', command=self.exit)
 
         self.modemenu = tk.Menu(self.menubar, tearoff=0)
+        self.scannermenu = tk.Menu(self.modemenu, tearoff=0)
         self.menubar.add_cascade(label='Mode', menu=self.modemenu)
-        self.modemenu.add_command(label='Scanner', command=self.scanner)
         self.modemenu.add_command(label='Panorama', command=self.panorama)
+        self.modemenu.add_cascade(label='Scanner', menu=self.scannermenu)
+        self.scannermenu.add_command(label='A4', command=self.scannerA4)
+        self.scannermenu.add_command(label='F4', command=self.scannerF4)
+        self.scannermenu.add_command(label='CARD', command=self.scannerCard)
 
         self.label = tk.Label(self.win, text='Select 4 corners', bg='green',
             font=('Arial', 10), width=13, height=2)
@@ -100,7 +155,7 @@ class App(object):
         self.btn_apply.pack(fill=tk.Y, side=tk.LEFT)
 
         self.win.resizable(0,0)
-        print('running!')
+        INFO('App Running!')
         self.win.mainloop()
 
 
@@ -116,6 +171,9 @@ class MouseCB(object):
         self.flags = 0
         self.param = 0
         self.quit = 0
+        self.cvtapp = None
+        self.cvt_app = None
+        self.cvt_up = 0
 
     def play_cb(self, event, x, y, flags, param):
         self.cursor = [x, y]
@@ -130,17 +188,60 @@ class MouseCB(object):
             if self.cur_time == 4:
                 self.pt3 = [x, y]
             if self.cur_time == TIME_MAX:
-                self.cur_time = 0
+                self.cur_time = 4
         if event == cv2.EVENT_RBUTTONDOWN:
             self.cur_time = 0
 
+    def getU(self):
+        return np.array([[self.pt0[0], self.pt1[0], self.pt2[0], self.pt3[0]],
+                         [self.pt0[1], self.pt1[1], self.pt2[1], self.pt3[1]],
+                         [1, 1, 1, 1.0]])
+
     def play_reset(self):
         self.cur_time = 0
-        print('hit reset!')
+        INFOH('hit reset!')
 
     def play_apply(self):
-        self.flags = 1
-        print('hit apply!')
+        global g_ctx
+        if (self.cur_time == 4 and g_ctx is not None):
+            self.flags = 1
+            u = self.getU()
+            g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV)
+            self.startCvTApp()
+        else:
+            INFO('hit apply! Please select region first')
+
+
+    def startCvTApp(self):
+        self.cvtapp = CvTApp()
+        self.cvt_app = pthread.Thread(target=self.cvtapp.run)
+        self.cvt_app.start()
+        self.cvt_up = 1
+
+    def exitCvTApp(self):
+        global g_ctx
+        g_ctx.cvt_quit = 1
+        self.cvt_app.join()
+        self.cvt_app = None
+        self.cvt_up = 0
+        g_ctx.cvt_quit = 0
+
+class CvTApp(object):
+    def run(self):
+        cv2.namedWindow(WINT, cv2.WINDOW_NORMAL)
+        while (g_ctx.oimg is None):
+            time.sleep(0.1)
+        img = g_ctx.oimg.copy()
+        hh, ww, cc = img.shape
+        cv2.resizeWindow(WINT, ww, hh)
+        while (g_ctx.cvt_quit == 0):
+            if (cv2.getWindowProperty(WINT, 0) < 0):
+                break
+            cv2.imshow(WINT, img)
+            key = cv2.waitKey(30)
+            if (key == ord('q')):
+                break
+        cv2.destroyWindow(WINT) 
 
 class CvApp(object):
     def __init__(self):
@@ -170,7 +271,7 @@ class CvApp(object):
                 k.append(cb.pt3)
                 k[cb.cur_time] = cb.cursor
                 for l in range(cb.cur_time):
-                    print(k[l], k[l+1])
+                    #print(k[l], k[l+1])
                     cv2.line(blk, tuple(k[l]), tuple(k[l+1]), (0,170,0), 3)
             if cb.cur_time == 4:
                 k = []
@@ -187,6 +288,10 @@ class CvApp(object):
                 break
         cv2.destroyAllWindows()
 
+SCANNERV = np.array([[0, 400, 400., 0],
+              [0, 0,   780., 780],
+              [1,  1,  1,  1]])
+App.scanner(SIZE_S.A4)
 g_ctx = Control()
 cb = MouseCB()
 
@@ -195,6 +300,7 @@ def run():
     ctrl = App()
     ctrl.run(cb)
     g_ctx.cv_quit = 1
+    g_ctx.cvt_quit = 1
     exit(0)
 
 def main():
