@@ -17,5 +17,52 @@ implement Calc homography for 4 points transformation
 implement backward wrapping for image perspective transformation.
 See homography.py
 
+### Usage
+
+1. Open UI 
+
+```python
+$ python app.py
+```
+
+![UI](ui.jpg)
+
+2. Open image  
+
+```
+Select <File>
+Select <Open>
+Select <ImageFile>
+```
+
+3. Select Format of your scanner  
+
+```
+Select <Mode>
+Select <Scanner>
+Select <Fmt -> A4/F4/Card>
+```
+
+![Image](cv.jpg)
+
+4. Select 4 points clockwisely within your images  
+
+```
+First with topleft
+Reset the 4 points by Click <Reset> or right click the mouse
+```
+
+5. Click <Apply> Button  
+
+```
+Wait several seconds
+Click <File>
+Click <Save>
+Write <Your File name>
+```
+
+![Transformed](transform.jpg)
+
+
 @author by tcyu@umich.edu
 
