@@ -130,7 +130,7 @@ class App(object):
 
         self.filemenu.add_command(label='Open', command=self.open)
         self.filemenu.add_command(label='Save', command=self.save)
-        self.filemenu.add_separator()    # 新增一條分隔線
+        self.filemenu.add_separator()
         self.filemenu.add_command(label='Exit', command=self.exit)
 
         self.modemenu = tk.Menu(self.menubar, tearoff=0)
@@ -206,7 +206,8 @@ class MouseCB(object):
         if (self.cur_time == 4 and g_ctx is not None):
             self.flags = 1
             u = self.getU()
-            g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV)
+            box = [SCANNERV[1, 2], SCANNERV[0, 2]]
+            g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV, box=box)
             self.startCvTApp()
         else:
             INFO('hit apply! Please select region first')

@@ -117,8 +117,32 @@ def wrapPerspective(img, H, convert='nn'):
     img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
     return img_n, min_x, min_y
 
+def wrapPerspectiveScan(img, H, res, convert='nn'):
+    imgh, imgw, _ = img.shape
+    h, w = res
+    min_x = 0
+    min_y = 0
+    max_x = w
+    max_y = h
+    max_w = w
+    max_h = h
 
-def transformImage(img, u, v, method='bilinear'):
+    # Construct meshgrid for transformation
+    x = np.linspace(min_x, max_x, max_w)
+    y = np.linspace(min_y, max_y, max_h)
+    xv, yv = np.meshgrid(x, y)
+    z = np.dstack([xv, yv, np.ones((max_h, max_w))]).reshape([max_w * max_h , 3]).T
+
+    # backward wrapping
+    invH = np.linalg.inv(H)
+    z_t = invH @ z
+    z_t /= z_t[-1,:]
+
+    # interpolation
+    img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
+    return img_n, min_x, min_y
+
+def transformImage(img, u, v, box=None, method='bilinear'):
     """ transformImage
     @brief: Homography perspective transform from u to v
     @[in] img: numpy image MxNx3
@@ -128,13 +152,16 @@ def transformImage(img, u, v, method='bilinear'):
     @[out] o:  transformed image
     """
     H = calcHomographyLinear(u.T[:,:2], v.T[:,:2])
-    imgn, mx, my = wrapPerspective(img, H, convert=method) 
+    if box is None:
+        imgn, mx, my = wrapPerspective(img, H, convert=method)
+    else:
+        imgn, mx, my = wrapPerspectiveScan(img, H, box, convert=method)
     imgn = imgn.astype(np.uint8)
     sx = int(v[0,0]-mx); sy = int(v[1,0]-my)
     ex = int(v[0,2]-mx); ey = int(v[1,2]-my)
     return imgn[sy:ey+1, sx:ex+1,:]
 
-def main():
+def example0():
     imgFile = 'notebook.jpg'
     img = cv2.imread(imgFile)
     u = np.array([[50,470,600.,90],
@@ -161,6 +188,12 @@ def main():
         if (k == ord('q')):
             exit(0)
 
+def example1():
+    pass
+
+def main():
+    example0()
+    example1()
 
 if __name__ == '__main__':
     main()
