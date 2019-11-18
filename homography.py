@@ -27,11 +27,55 @@ def calc_correspLinear(u, v):
     b = np.array([[v[0,0], v[0,1], v[1,0], v[1,1], v[2,0], v[2,1], v[3,0], v[3,1]]]).astype(np.float32).T
     return a, b
 
-def calcHomography(u, v):
+def calc_correspCollective(u, v):
+    mx, nx = u.shape
+    a = np.zeros((mx, 2 * 9), dtype=np.float32)
+    a[:, 0] = -u[:, 0]
+    a[:, 1] = -u[:, 1]
+    a[:, 2] = -1
+    a[:, 6] = u[:, 0] * v[:, 0]
+    a[:, 7] = u[:, 1] * v[:, 0]
+    a[:, 8] = v[:, 0]
+    a[:, 12] = -u[:, 0]
+    a[:, 13] = -u[:, 1]
+    a[:, 14] = -1
+    a[:, 15] = u[:, 0] * v[:, 1]
+    a[:, 16] = u[:, 1] * v[:, 1]
+    a[:, 17] = v[:, 1]
+    a = a.reshape(mx * 2, 9)
+    return a
+
+def calc_correspLinearCollective(u, v):
+    # 2N * 8 see https://scm_mos.gitlab.io/vision/homography-matrix/
+    mx, nx = u.shape
+    a = np.zeros((mx, 2 * 8), dtype=np.float32)
+    b = np.zeros((mx, 2), dtype=np.float32)
+    a[:, 0] = u[:, 0]
+    a[:, 1] = u[:, 1]
+    a[:, 2] = 1
+    a[:, 6] = -u[:, 0] * v[:, 0]
+    a[:, 7] = -u[:, 1] * v[:, 0]
+    a[:, 11] = u[:, 0]
+    a[:, 12] = u[:, 1]
+    a[:, 13] = 1
+    a[:, 14] = -u[:, 0] * v[:, 1]
+    a[:, 15] = -u[:, 1] * v[:, 1]
+
+    b[:, 0] = v[:, 0]
+    b[:, 1] = v[:, 1]
+
+    a = a.reshape(mx * 2, 8)
+    b = b.reshape(mx * 2, 1)
+    return a, b
+
+def calcHomography(u, v, collective=False):
     """DLT algo"""
 
     # get assemable matrix
-    mat = calc_corresp(u, v)
+    if collective:
+        mat = calc_correspCollective(u, v)
+    else:
+        mat = calc_corresp(u, v)
     
     # svd composition
     u, s, v = np.linalg.svd(mat)
@@ -43,11 +87,14 @@ def calcHomography(u, v):
     h = h / h.item(8)
     return h
 
-def calcHomographyLinear(u, v):
+def calcHomographyLinear(u, v, collective=False):
     """Linear"""
 
     # get assemable matrix
-    A, b = calc_correspLinear(u, v)
+    if collective:
+        A, b = calc_correspLinearCollective(u, v)
+    else:
+        A, b = calc_correspLinear(u, v)
     
     # solver linear AH = b, H = (A.T * A)^-1 * A.T * b
     h = np.linalg.inv(A.T @ A) @ (A.T @ b)

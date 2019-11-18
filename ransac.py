@@ -1,6 +1,10 @@
 import numpy as np
 from homography import calcHomographyLinear, calcHomography
 
+def DEBUG(*args):
+    if LVL >= 1:
+        print("[DEBUG]", *args)
+
 
 class Model(object):
     __slots__ = ('val', 'th', 'd', 'n')
@@ -22,7 +26,7 @@ class HomoModel(Model):
         self.n = n
         self.val = np.empty((3,3),dtype=np.float32)
 
-    def fit(self, X, Y):
+    def fit(self, X, Y, collective=False):
         """
         @brief fit homography model
         @param[in] X - observation input 3x4 or 2x4
@@ -30,7 +34,7 @@ class HomoModel(Model):
         """
         nx, mx = X.shape
         ny, my = Y.shape
-        assert (mx == my) and (mx == self.n) , "invalid data size should be %d" % self.n
+        assert ((mx == my) and (mx == self.n)) or ((mx == my) and (mx > self.n) and collective)  , "invalid data size should be %d" % self.n
         assert (nx == ny) and nx in [2, 3], "invalid input dimension for row numbers"
         """if nx == 2:
             x = np.ones((3, mx),dtype=np.float32)
@@ -41,7 +45,10 @@ class HomoModel(Model):
             x = X
             y = Y"""
         #self.val = calcHomographyLinear(X.T[:,:2], Y.T[:,:2])
-        self.val = calcHomography(X.T[:,:2], Y.T[:,:2])
+        if collective:
+            self.val = calcHomographyLinear(X.T[:,:2], Y.T[:,:2], True)
+        else:
+            self.val = calcHomography(X.T[:,:2], Y.T[:,:2], False)
         return self.val
 
     def fwd(self, X):
@@ -55,12 +62,39 @@ class HomoModel(Model):
         y = self.val @ x
         return y/y[-1,:]
 
+    def reproj(self, Y):
+        ny, my = Y.shape
+        assert ny in [2, 3], "invalid input dimension for row numbers"
+        if ny == 2:
+            y = np.ones((3, my),dtype=np.float32)
+            y[:2,:] = Y
+        else:
+            y = Y
+        reH = np.linalg.inv(self.val)
+        reX = reH @ y
+        return reX/reX[-1,:]
+
     def dist(self, predY, trueY):
         delta = (predY - trueY)
         delta = np.sum(delta * delta, axis=0)
         dist = np.sqrt(delta)
         return dist
 
+    def computeLoss(self, X, Y, method="reproj"):
+        if method == "fwd":
+            pred_y = self.fwd(X)
+            err_total = self.dist(pred_y[:2,:], Y)
+        elif method == "backward":
+            pred_x = self.reproj(Y)
+            err_total = self.dist(pred_x[:2,:], X)
+        elif method == "reproj":
+            pred_y = self.fwd(X)
+            err_total = self.dist(pred_y[:2,:], Y)
+            pred_x = self.reproj(Y)
+            err_total += self.dist(pred_x[:2,:], X)
+        else:
+            exit("Invalid method!")
+        return err_total
 """
 Given:
     data – a set of observations
@@ -117,7 +151,11 @@ class RANSAC(object):
         self.n = model.n
         self.k = k
 
-    def run(self, data):
+    def computeLoss(self, X, Y, method="reproj"):
+        error_total = self.model.computeLoss(X, Y, method)
+        return error_total
+
+    def run(self, data, method="reproj"):
         """
         @brief run ransac algo
         @param[in] data - X -> nx X mx ( number of observation features, number of total observations)
@@ -133,21 +171,21 @@ class RANSAC(object):
         finalM = None
         #bestErr = 9999999999
         totalfitLen = 0
+        inliers_pos_final = None
         for i in range(self.k):
             idx = np.random.randint(0, mx, self.n)
             maybeInliers_x = X[:, idx]
             maybeInliers_y = Y[:, idx]
             maybeModel = self.model.fit(maybeInliers_x, maybeInliers_y)
             alsoInliers = []
-
-            pred_y = self.model.fwd(X)
-            err_total = self.model.dist(pred_y[:2,:], Y) 
-            inliers_pos = err_total < self.th
+            err_total = self.computeLoss(X, Y, method)
+            inliers_pos = err_total < (self.th)
             lenalsoIninears = np.sum(inliers_pos)
-            #print(i , mx, lenalsoIninears, d, self.n)
+            DEBUG(i , mx, lenalsoIninears, d, self.n)
             if lenalsoIninears >= (d + self.n):
                 totalfitLen = lenalsoIninears
                 finalModel = maybeModel
+                inliers_pos_final = inliers_pos
                 break
                 """            
                 betterModel = model parameters fitted to all points in maybeInliers and alsoInliers
@@ -160,23 +198,32 @@ class RANSAC(object):
             if lenalsoIninears > totalfitLen:
                 finalModel = maybeModel
                 totalfitLen = lenalsoIninears
+                inliers_pos_final = inliers_pos
         if (lenalsoIninears < (d + self.n)):
             print("Warning:: fitting model does not exceed required threshold %d vs %d" % (totalfitLen, d + self.n))
+        # final fitting, take all inliers
+        inliers = np.where(inliers_pos_final)
+        inliers_x = X[:, inliers[0]]
+        inliers_y = Y[:, inliers[0]]
+        DEBUG("Fitting final model using all inliers")
+        finalModel = self.model.fit(inliers_x, inliers_y, collective=True)
         self.model.val = finalModel
-        inliers = np.where(inliers_pos)
+
         return finalModel, inliers, totalfitLen
 
         # Reject long dist 
         # Average the rest matrix in H
 
+LVL = 0
 
 def main():
+    """matchespoints file is extracted from homography.ipynb"""
     FILE = "matchespoints.npy"
     a = np.load(FILE).tolist()
     ptsA, ptsB = a['ptsA'].T, a['ptsB'].T
-    model = HomoModel(th=2.5,d=60,n=4)
-    ransac = RANSAC(model, k=2000)
-    H, inliers, _len = ransac.run([ptsA, ptsB])
+    model = HomoModel(th=5,d=70,n=4)
+    ransac = RANSAC(model, k=1000)
+    H, inliers, _len = ransac.run([ptsA, ptsB], method="fwd")
     print(H, _len, '\n')
     print(0)
 
