@@ -217,7 +217,10 @@ class RANSAC(object):
 LVL = 0
 
 def main():
-    """matchespoints file is extracted from homography.ipynb"""
+    """matchespoints file is extracted from homography.ipynb
+    See also Least square error and pInv solution
+    https://www.quora.com/What-is-the-relation-between-least-squares-estimation-and-singular-value-decomposition
+    """
     FILE = "matchespoints.npy"
     a = np.load(FILE).tolist()
     ptsA, ptsB = a['ptsA'].T, a['ptsB'].T
