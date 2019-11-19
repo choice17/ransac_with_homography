@@ -7,6 +7,7 @@ import threading as pthread
 import os
 import time
 from homography import transformImage
+from ransac import stitching
 
 debugLvl = 0.5 
 
@@ -14,6 +15,7 @@ WIN = 'app'
 WINT = 'transform'
 TIME_MAX = 5
 H, W, C = 400, 500, 3
+
 class SIZE_S(object):
     A4 = 297 * 4, 210 * 4
     F4 = 330 * 4, 210 * 4
@@ -29,7 +31,7 @@ def INFOH(*args):
         print("[INFOH] ", *args)
 
 def WARN(*args):
-    if debugLvl >= 1:
+    if debugLvl >= 0:
         print("[WARN] ", *args)
 
 def DEBUG(*args):
@@ -41,6 +43,10 @@ def ERR(*args):
         print("[ERR] ", *args)
 
 class Control(object):
+    SCANNER = 0
+    PANORAMA = 1
+    PANO_CNT_TH = 2
+
     def __init__(self):
         self.app_quit = 0
         self.cv_quit = 0
@@ -48,15 +54,17 @@ class Control(object):
         self.img_name = None
         self.img = None
         self.oimg = None
-
+        self.img2 = None
+        self.mode = self.SCANNER
+        self.pano_cnt = 0
 
 class App(object):
     def __init__(self):
         self.quit = 0
         self.cv_app_up = 0
 
-    def open(self):
-        global g_ctx, cb
+    def openScanner(self):
+        global cb
         name = F.askopenfilename(initialdir=os.getcwd(),
                                filetypes =(("Image Files","*.jpg"),("All Files","*.*"),),
                                title = "Choose a file."
@@ -86,6 +94,53 @@ class App(object):
         else:
             ERR("Cannot reach the file %s" % name)
 
+    def openPanorama(self):
+        global cb, g_ctx
+        name = F.askopenfilename(initialdir=os.getcwd(),
+                               filetypes =(("Image Files","*.jpg"),("All Files","*.*"),),
+                               title = "Choose a file."
+                               )
+        INFOH("-%s-" % name)
+        if os.path.exists(name):
+        #Using try in case user types in unknown file or closes without choosing a file.
+            try:
+                if (g_ctx.pano_cnt == 0):
+                    g_ctx.img_name = name
+                    g_ctx.img = cv2.imread(name)
+                    INFO("Query Image Selected")
+                else:
+                    g_ctx.img2_name = name
+                    g_ctx.img2 = cv2.imread(name)
+                    INFO("Transform Image Selected")
+                g_ctx.pano_cnt = (g_ctx.pano_cnt + 1) % Control.PANO_CNT_TH
+                    #print(UseFile.read())
+            except:
+                WARN("No file exists")
+            """if (self.cv_app_up):
+                g_ctx.cv_quit = 1
+                self.cv_app.join()
+                self.cv_app_up = 0
+                DEBUG("turn off image")
+
+            cb.cur_time = 0
+            g_ctx.cv_quit = 0
+            self.cvapp = CvApp()
+            self.cv_app = pthread.Thread(target=self.cvapp.run, args=(cb,))
+            self.cv_app.start()
+            self.cv_app_up = 1
+            """
+            INFOH("start new session")
+        else:
+            ERR("Cannot reach the file %s" % name)
+
+    def open(self):
+        global g_ctx
+        if g_ctx.mode == Control.SCANNER:
+            self.openScanner()
+        elif g_ctx.mode == Control.PANORAMA:
+            self.openPanorama()
+        return
+
     def save(self):
         if g_ctx.oimg is not None:
             filename =  F.asksaveasfilename(initialdir = os.getcwd(),title = "Select file",filetypes = (("jpeg files","*.jpg"),("all files","*.*")))
@@ -101,14 +156,18 @@ class App(object):
         self.win.destroy()
 
     def scanner(fmt):
-        global SCANNERV
+        global SCANNERV, g_ctx
+        g_ctx.mode = Control.SCANNER
         SCANNERV = np.array([[0, int(fmt[1]), int(fmt[1]), 0],
                       [0, 0,   int(fmt[0]), int(fmt[0])],
                       [1,  1,  1,  1]])
-        WARN("scanner mode")
+        WARN("Scanner mode selected!")
 
     def panorama(self):
-        WARN("panorama mode")
+        global g_ctx
+        g_ctx.mode = Control.PANORAMA
+        g_ctx.pano_cnt = 0
+        WARN("Panorama mode selected!")
 
     def scannerA4(self):
         App.scanner(SIZE_S.A4)
@@ -201,7 +260,7 @@ class MouseCB(object):
         self.cur_time = 0
         INFOH('hit reset!')
 
-    def play_apply(self):
+    def play_apply_scanner(self):
         global g_ctx
         if (self.cur_time == 4 and g_ctx is not None):
             self.flags = 1
@@ -211,6 +270,22 @@ class MouseCB(object):
             self.startCvTApp()
         else:
             INFO('hit apply! Please select region first')
+
+    def play_apply_pano(self):
+        global g_ctx
+        if g_ctx.img is not None and g_ctx.img2 is not None:
+            g_ctx.oimg = stitching(g_ctx.img2, g_ctx.img, k=1500)
+            cv2.imshow("T",g_ctx.oimg)
+            cv2.waitKey(0)
+        else:
+            INFO('hit apply! Please select region first')
+
+    def play_apply(self):
+        global g_ctx
+        if g_ctx.mode == Control.SCANNER:
+            self.play_apply_scanner()
+        elif g_ctx.mode == Control.PANORAMA:
+            self.play_apply_pano()
 
 
     def startCvTApp(self):
@@ -292,8 +367,8 @@ class CvApp(object):
 SCANNERV = np.array([[0, 400, 400., 0],
               [0, 0,   780., 780],
               [1,  1,  1,  1]])
-App.scanner(SIZE_S.A4)
 g_ctx = Control()
+App.scanner(SIZE_S.A4)
 cb = MouseCB()
 
 def run():

@@ -232,7 +232,12 @@ def example0():
     print(0)
 
 
-def stitching(trainImg, queryImg, ransacMet="reproj"):
+def stitching(trainImg, queryImg, 
+                ransacMet="fwd",
+                th=5,
+                d=70,
+                n=4,
+                k=1000):
     trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
     queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
 
