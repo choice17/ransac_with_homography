@@ -134,7 +134,7 @@ def bilinear(z_t, img, h, w, mh, mw):
 
 convertfunc = {'nn':nearestNeighbor, 'bilinear':bilinear}
 
-def wrapPerspective(img, H, convert='nn'):
+def wrapPerspective(img, H, convert='nn', boundary=0, crop=True):
     h, w, c = img.shape
     bnd = np.array([[0, w-1, w-1, 0],
                    [0, 0,   h-1, h-1],
@@ -142,12 +142,20 @@ def wrapPerspective(img, H, convert='nn'):
     bnd_n = H @ bnd
     bnd_n /= bnd_n[-1,:]
     # find max boundary
-    max_x = int(np.max(bnd_n[0,:]))
-    min_x = int(np.min(bnd_n[0,:]))
-    max_y = int(np.max(bnd_n[1,:]))
-    min_y = int(np.min(bnd_n[1,:]))
-    max_w = max_x - min_x + 1
-    max_h = max_y - min_y + 1
+    if boundary:
+        max_x = int(np.max(bnd_n[0,:]))
+        min_x = max(int(np.min(bnd_n[0,:])),0)
+        max_y = int(np.max(bnd_n[1,:]))
+        min_y = max(int(np.min(bnd_n[1,:])),0)
+        max_w = max_x - min_x + 1
+        max_h = max_y - min_y + 1
+    else:
+        max_x = int(np.max(bnd_n[0,:]))
+        min_x = int(np.min(bnd_n[0,:]))
+        max_y = int(np.max(bnd_n[1,:]))
+        min_y = int(np.min(bnd_n[1,:]))
+        max_w = max_x - min_x + 1
+        max_h = max_y - min_y + 1
 
     # Construct meshgrid for transformation
     x = np.linspace(min_x, max_x, max_w)
@@ -161,7 +169,13 @@ def wrapPerspective(img, H, convert='nn'):
     z_t /= z_t[-1,:]
 
     # interpolation
-    img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
+    img_n = None
+    if crop:
+        img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
+    else:
+        img_n = np.zeros((max_y+1, max_x+1, 3),dtype=np.float32)
+        img_t = convertfunc[convert](z_t, img, h, w, max_h, max_w)
+        img_n[min_y:min_y+max_h,min_x:min_x+max_w,:] = img_t
     return img_n, min_x, min_y
 
 def wrapPerspectiveScan(img, H, res, convert='nn'):
@@ -207,6 +221,38 @@ def transformImage(img, u, v, box=None, method='bilinear'):
     sx = int(v[0,0]-mx); sy = int(v[1,0]-my)
     ex = int(v[0,2]-mx); ey = int(v[1,2]-my)
     return imgn[sy:ey+1, sx:ex+1,:]
+
+def transformImageH(img, H, method='bilinear'):
+    """ transformImage
+    @brief: Homography perspective transform by H
+    @[in] img: numpy image MxNx3
+    @[in] H: transform matrix
+    @[in] method: interpolation method:nn/bilinear
+    @[out] o:  transformed image
+    """
+    imgn, _, _ = wrapPerspective(img, H, convert=method, boundary=1, crop=False)
+    return imgn.astype(np.uint8)
+
+   
+
+def stitchPanorama(imgQ, imgT, H, method='bilinear'):
+    """ stitchPanorama
+    @brief: stitch two images by transformation matrix
+    @[in] imgQ: numpy query image MxNx3
+    @[in] imgT: numpy transform image mxnx3
+    @[in] H: transform matrix [3x3]
+    @[in] method: interpolation method:nn/bilinear
+    @[out] o:  transformed image
+    """
+    img_t = transformImageH(imgT, H)
+    ht, wt, ct = img_t.shape
+    hq, wq, cq = imgQ.shape
+    hn = max(ht,hq)
+    wn = max(wt,wq)
+    imgn = np.zeros((hn,wn,ct), dtype=np.uint8)
+    imgn[:ht,:wt,:] = img_t
+    imgn[:hq,:wq,:] = imgQ
+    return imgn
 
 def example0():
     imgFile = 'notebook.jpg'

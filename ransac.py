@@ -1,5 +1,6 @@
 import numpy as np
-from homography import calcHomographyLinear, calcHomography
+import cv2
+from homography import calcHomographyLinear, calcHomography, stitchPanorama
 
 def DEBUG(*args):
     if LVL >= 1:
@@ -216,7 +217,7 @@ class RANSAC(object):
 
 LVL = 0
 
-def main():
+def example0():
     """matchespoints file is extracted from homography.ipynb
     See also Least square error and pInv solution
     https://www.quora.com/What-is-the-relation-between-least-squares-estimation-and-singular-value-decomposition
@@ -229,6 +230,54 @@ def main():
     H, inliers, _len = ransac.run([ptsA, ptsB], method="fwd")
     print(H, _len, '\n')
     print(0)
+
+
+def stitching(trainImg, queryImg, ransacMet="reproj"):
+    trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
+    queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
+
+    descriptor = cv2.ORB_create()
+    (kpsA, featuresA) = descriptor.detectAndCompute(trainImg_gray, None)
+    (kpsB, featuresB) = descriptor.detectAndCompute(queryImg_gray, None)
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    best_matches = bf.match(featuresA,featuresB)
+    matches = sorted(best_matches, key = lambda x:x.distance)
+
+    kpsA = np.float32([kp.pt for kp in kpsA])
+    kpsB = np.float32([kp.pt for kp in kpsB])
+
+    ptsA = np.float32([kpsA[m.queryIdx] for m in matches])
+    ptsB = np.float32([kpsB[m.trainIdx] for m in matches])
+
+    model = HomoModel(th=5,d=70,n=4)
+    ransac = RANSAC(model, k=1000)
+    H, inliers, _len = ransac.run([ptsA.T, ptsB.T], method=ransacMet)
+
+    h, w, c = queryImg.shape
+    imgn = stitchPanorama(queryImg, trainImg, H=H)
+    return imgn
+
+
+def example1():
+    
+    IMAGEA = 'foto1A.jpg'
+    IMAGEB = 'foto1B.jpg'
+
+    trainImg = cv2.imread(IMAGEA)[:,:,::-1]
+    #trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
+
+    queryImg = cv2.imread(IMAGEB)[:,:,::-1]
+    # Opencv defines the color channel in the order BGR. 
+    #queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
+
+    imgn = stitching(trainImg, queryImg, "fwd")
+    cv2.imshow("T",imgn[:,:,::-1])
+    cv2.waitKey(0)
+
+def main():
+    #example0()
+    example1()
 
 
 if __name__ == '__main__':
