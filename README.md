@@ -27,6 +27,8 @@ $ python app.py
 
 ![UI](ui.jpg)
 
+#### SCANNER
+
 2. Open image  
 
 ```
@@ -63,6 +65,38 @@ Write <Your File name>
 
 ![Transformed](transform.jpg)
 
+### STITCH PANORAMA
+
+2. Open image (Query image)
+
+```
+Select <File>
+Select <Open>
+Select <ImageFile>
+```
+
+example. foto1A.jpg
+
+3. Open image (Train/Transform image)
+
+```
+Select <File>
+Select <Open>
+Select <ImageFile>
+```
+
+example. foto1B.jpg
+
+4. Click <Apply> Button  
+
+```
+Wait several seconds
+Click <File>
+Click <Save>
+Write <Your File name>
+```
+
+![Transformed](stitch.jpg)
 
 @author by tcyu@umich.edu
 

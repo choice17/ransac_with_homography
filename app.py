@@ -42,6 +42,46 @@ def ERR(*args):
     if debugLvl >= 0:
         print("[ERR] ", *args)
 
+def calcFixedAspectRatio(win_dim, tar_dim):
+    """
+    @param: win_dim current window dim (width, height)
+    @param: tar_dim target image dim (width, height)
+    """
+    w, h = win_dim
+    tw, th = tar_dim
+    if w > h:
+        h_r = h ; w_r = int(h * (tw/ th))
+        if w_r > w:
+            h_r = int(w * (th / tw))
+            w_r = w
+    else: # h > w:
+        w_r = w ; h_r = int(w * (th / tw))
+        if h_r > h:
+            h_r = h
+            w_r = int(h * (tw / th))
+    sz = (w_r, h_r)
+    if 0 in sz:
+        return 0, sz, 0, 0, 0, 0
+    else:
+        sx = (w >> 1) - ((w_r + 1) >> 1) ; ex = sx + w_r
+        sy = (h >> 1) - ((h_r + 1) >> 1) ; ey = sy + h_r
+        if sx < 0: ex -= sx ; sx = 0
+        if sy < 0: ey -= sy ; sy = 0
+        if ex > w: sx -= w - ex ; ex = w
+        if ey > h: sy -= h - ey ; ey = h
+    return 1, sz, sx, sy, ex, ey
+
+def run_resize_image(image, cvwin, ww, hh):
+    x, y, w, h = cv2.getWindowImageRect(cvwin)
+    if (w > 0) and h > 0:
+        suc, sz, sx, sy, ex, ey = calcFixedAspectRatio([w, h], [ww, hh])
+        if suc:
+            #DEBUG(suc, sz, sx, sy, ex, ey, (ww, hh), (x, y, w, h), image.shape, cvwin)
+            img = cv2.resize(image, sz, interpolation=cv2.INTER_LINEAR)
+            image = np.zeros((h, w, 3), dtype=np.uint8)
+            image[sy:ey, sx:ex, :] = img
+    return image
+
 class Control(object):
     SCANNER = 0
     PANORAMA = 1
@@ -267,7 +307,7 @@ class MouseCB(object):
             u = self.getU()
             box = [SCANNERV[1, 2], SCANNERV[0, 2]]
             g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV, box=box)
-            self.startCvTApp()
+            self.startCvApp(CvApp)
         else:
             INFO('hit apply! Please select region first')
 
@@ -275,8 +315,7 @@ class MouseCB(object):
         global g_ctx
         if g_ctx.img is not None and g_ctx.img2 is not None:
             g_ctx.oimg = stitching(g_ctx.img2, g_ctx.img, k=1500)
-            cv2.imshow("T",g_ctx.oimg)
-            cv2.waitKey(0)
+            self.startCvApp(CvPApp)
         else:
             INFO('hit apply! Please select region first')
 
@@ -287,9 +326,8 @@ class MouseCB(object):
         elif g_ctx.mode == Control.PANORAMA:
             self.play_apply_pano()
 
-
-    def startCvTApp(self):
-        self.cvtapp = CvTApp()
+    def startCvApp(self, cvapp):
+        self.cvtapp = cvapp()
         self.cvt_app = pthread.Thread(target=self.cvtapp.run)
         self.cvt_app.start()
         self.cvt_up = 1
@@ -302,22 +340,27 @@ class MouseCB(object):
         self.cvt_up = 0
         g_ctx.cvt_quit = 0
 
-class CvTApp(object):
+class CvPApp(object):
     def run(self):
-        cv2.namedWindow(WINT, cv2.WINDOW_NORMAL)
-        while (g_ctx.oimg is None):
+        blank = np.zeros((H,W,C),dtype=np.uint8)
+        cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+        i = 0
+        global g_ctx
+        while (g_ctx.img_name == None):
             time.sleep(0.1)
-        img = g_ctx.oimg.copy()
-        hh, ww, cc = img.shape
-        cv2.resizeWindow(WINT, ww, hh)
-        while (g_ctx.cvt_quit == 0):
-            if (cv2.getWindowProperty(WINT, 0) < 0):
+        blank = g_ctx.oimg.copy()
+        hh, ww, cc = blank.shape
+        cv2.resizeWindow(WIN, ww, hh)
+        while (g_ctx.cv_quit == 0):
+            if (cv2.getWindowProperty(WIN, 0) < 0):
                 break
-            cv2.imshow(WINT, img)
+            blk = blank.copy()
+            show_img = run_resize_image(blk, WIN, ww, hh)
+            cv2.imshow(WIN, show_img)
             key = cv2.waitKey(30)
             if (key == ord('q')):
                 break
-        cv2.destroyWindow(WINT) 
+        cv2.destroyAllWindows()
 
 class CvApp(object):
     def __init__(self):
@@ -358,6 +401,7 @@ class CvApp(object):
                 cv2.polylines(blk, np.array([k]) , 1, [0, 170,255], 10)
             #cv2.putText(blk, "%d" % i, 0.6, 1, 4, 1)
             #print(i, cb.cursor, cb.pt0, cb.pt1, cb.pt2, cb.pt3)
+            blk = run_resize_image(blk, WIN, ww, hh)
             cv2.imshow(WIN, blk)
             key = cv2.waitKey(30)
             if (key == ord('q')):

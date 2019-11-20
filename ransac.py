@@ -266,8 +266,8 @@ def stitching(trainImg, queryImg,
 
 def example1():
     
-    IMAGEA = 'foto1A.jpg'
-    IMAGEB = 'foto1B.jpg'
+    IMAGEA = 'foto1B.jpg'
+    IMAGEB = 'foto1A.jpg'
 
     trainImg = cv2.imread(IMAGEA)[:,:,::-1]
     #trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
@@ -279,6 +279,7 @@ def example1():
     imgn = stitching(trainImg, queryImg, "fwd")
     cv2.imshow("T",imgn[:,:,::-1])
     cv2.waitKey(0)
+    cv2.imwrite("test.jpg", imgn[:,:,::-1])
 
 def main():
     #example0()

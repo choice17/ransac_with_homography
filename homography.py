@@ -173,7 +173,7 @@ def wrapPerspective(img, H, convert='nn', boundary=0, crop=True):
     if crop:
         img_n = convertfunc[convert](z_t, img, h, w, max_h, max_w)
     else:
-        img_n = np.zeros((max_y+1, max_x+1, 3),dtype=np.float32)
+        img_n = np.zeros((max_h, max_w, 3),dtype=np.float32)
         img_t = convertfunc[convert](z_t, img, h, w, max_h, max_w)
         img_n[min_y:min_y+max_h,min_x:min_x+max_w,:] = img_t
     return img_n, min_x, min_y
@@ -230,8 +230,8 @@ def transformImageH(img, H, method='bilinear'):
     @[in] method: interpolation method:nn/bilinear
     @[out] o:  transformed image
     """
-    imgn, _, _ = wrapPerspective(img, H, convert=method, boundary=1, crop=False)
-    return imgn.astype(np.uint8)
+    imgn, mx, my = wrapPerspective(img, H, convert=method, boundary=0, crop=True)
+    return imgn.astype(np.uint8), mx, my
 
    
 
@@ -244,14 +244,32 @@ def stitchPanorama(imgQ, imgT, H, method='bilinear'):
     @[in] method: interpolation method:nn/bilinear
     @[out] o:  transformed image
     """
-    img_t = transformImageH(imgT, H)
+    img_t, mx, my = transformImageH(imgT, H)
     ht, wt, ct = img_t.shape
     hq, wq, cq = imgQ.shape
-    hn = max(ht,hq)
-    wn = max(wt,wq)
-    imgn = np.zeros((hn,wn,ct), dtype=np.uint8)
-    imgn[:ht,:wt,:] = img_t
-    imgn[:hq,:wq,:] = imgQ
+
+    tsx = 0; tsy = 0; tex = wt-1; tey = ht-1
+    qsx = 0; qsy = 0; qex = wq-1; qey = hq-1
+    fsx = min(0, mx); fsy = min(0, my)
+    fex = max(wq-1, mx+wt); fey = max(hq-1, my+ht)
+    fw = fex - fsx + 1; fh = fey - fsy + 1
+    
+    if (mx < 0) and (my < 0):
+        tex = wt-1; tey = ht-1
+        qsx = -mx; qsy = -my; qex = -mx+wq-1; qey = -my+hq-1
+    elif (mx < 0):
+        tsy = my; tey = my+ht-1
+        qsx = -mx; qex = -mx+wq-1
+    elif (mx >= 0) and (my < 0):
+        tsx = mx; tex = mx+wt-1
+        qsy = -my; qey = -my+hq-1
+    elif (mx >= 0):
+        tsx = mx; tsy = my; tex = mx+wt-1; tey = my+ht-1
+    fw = max(tex+1, qex+1)
+    fh = max(tey+1, qey+1)
+    imgn = np.zeros((fh,fw,ct), dtype=np.uint8)
+    imgn[tsy:tey+1,tsx:tex+1,:] = img_t
+    imgn[qsy:qey+1,qsx:qex+1,:] = imgQ
     return imgn
 
 def example0():
