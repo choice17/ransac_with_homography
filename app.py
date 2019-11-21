@@ -8,6 +8,7 @@ import os
 import time
 from homography import transformImage
 from ransac import stitching
+import signal
 
 debugLvl = 0.5 
 
@@ -218,7 +219,12 @@ class App(object):
     def scannerCard(self):
         App.scanner(SIZE_S.CARD)
 
+    def signalHandler(self, signal, frame):
+        INFO("Catching SIGINT signal!")
+        self.exit()
+
     def run(self, mousecb):
+        signal.signal(signal.SIGINT, self.signalHandler)
         self.win = tk.Tk()
         self.win.title('Homography')
         self.win.geometry('300x50')
@@ -307,7 +313,7 @@ class MouseCB(object):
             u = self.getU()
             box = [SCANNERV[1, 2], SCANNERV[0, 2]]
             g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV, box=box)
-            self.startCvApp(CvApp)
+            self.startCvApp(CvTApp)
         else:
             INFO('hit apply! Please select region first')
 
@@ -339,6 +345,24 @@ class MouseCB(object):
         self.cvt_app = None
         self.cvt_up = 0
         g_ctx.cvt_quit = 0
+
+class CvTApp(object):
+    def run(self):
+        cv2.namedWindow(WINT, cv2.WINDOW_NORMAL)
+        while (g_ctx.oimg is None):
+             time.sleep(0.1)
+        img = g_ctx.oimg.copy()
+        hh, ww, cc = img.shape
+        cv2.resizeWindow(WINT, ww, hh)
+        while (g_ctx.cvt_quit == 0):
+            if (cv2.getWindowProperty(WINT, 0) < 0):
+                 break
+            show_img = run_resize_image(img, WINT, ww, hh)
+            cv2.imshow(WINT, show_img)
+            key = cv2.waitKey(30)
+            if (key == ord('q')):
+                 break
+        cv2.destroyWindow(WINT)
 
 class CvPApp(object):
     def run(self):
@@ -421,6 +445,7 @@ def run():
     ctrl.run(cb)
     g_ctx.cv_quit = 1
     g_ctx.cvt_quit = 1
+    time.sleep(0.2)
     exit(0)
 
 def main():
