@@ -61,7 +61,7 @@ class HomoModel(Model):
         else:
             x = X
         y = self.val @ x
-        return y/y[-1,:]
+        return y/(y[-1,:] + 1e-10)
 
     def reproj(self, Y):
         ny, my = Y.shape
@@ -73,7 +73,7 @@ class HomoModel(Model):
             y = Y
         reH = np.linalg.inv(self.val)
         reX = reH @ y
-        return reX/reX[-1,:]
+        return reX/(reX[-1,:] + 1e-10)
 
     def dist(self, predY, trueY):
         delta = (predY - trueY)
@@ -237,7 +237,9 @@ def stitching(trainImg, queryImg,
                 th=5,
                 d=70,
                 n=4,
-                k=1000):
+                k=1000,
+                blending=False,
+                blendrate=0.2):
     trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
     queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
 
@@ -260,14 +262,14 @@ def stitching(trainImg, queryImg,
     H, inliers, _len = ransac.run([ptsA.T, ptsB.T], method=ransacMet)
 
     h, w, c = queryImg.shape
-    imgn = stitchPanorama(queryImg, trainImg, H=H)
+    imgn = stitchPanorama(queryImg, trainImg, H=H, blending=blending, blendrate=blendrate)
     return imgn
 
 
 def example1():
     
-    IMAGEA = 'foto1B.jpg'
-    IMAGEB = 'foto1A.jpg'
+    IMAGEA = 'foto1A.jpg'
+    IMAGEB = 'foto1B.jpg'
 
     trainImg = cv2.imread(IMAGEA)[:,:,::-1]
     #trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
@@ -276,7 +278,7 @@ def example1():
     # Opencv defines the color channel in the order BGR. 
     #queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
 
-    imgn = stitching(trainImg, queryImg, "fwd")
+    imgn = stitching(trainImg, queryImg, "fwd", blending="Rate", blendrate=0.2)
     cv2.imshow("T",imgn[:,:,::-1])
     cv2.waitKey(0)
     cv2.imwrite("test.jpg", imgn[:,:,::-1])

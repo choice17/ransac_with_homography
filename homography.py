@@ -108,29 +108,34 @@ def calcHomographyLinear(u, v, collective=False):
 def nearestNeighbor(z_t, img, h, w, mh, mw):
     # rounding
     z_t = (z_t + 0.5).astype(np.int32).T
+    chn = img.shape[2]
     img[0,0,0] = 0
     img[0,0,1] = 0
     img[0,0,2] = 0
+    if chn == 4:
+        img[0,0,3] = 0
     mask = (z_t[:, 0] > w-1) | (z_t[:, 0] < 0) | (z_t[:, 1] > h-1) | (z_t[:, 1] < 0)
     z_t[mask, 0:2]  = 0
     tmp = img[z_t[:,1],z_t[:,0],:]
-    img_n = tmp.reshape(mh, mw, 3)
+    img_n = tmp.reshape(mh, mw, chn)
     return img_n
 
 def bilinear(z_t, img, h, w, mh, mw):
     z_t = z_t.T
+    chn = img.shape[2]
     img[0,0,0] = 0
     img[0,0,1] = 0
     img[0,0,2] = 0
+    if chn == 4:
+        img[0,0,3] = 0
     mask = (z_t[:, 0] > w-1) | (z_t[:, 0] < 0) | (z_t[:, 1] > h-1) | (z_t[:, 1] < 0)
     z_t[mask, 0:2]  = 0
     z_ti = z_t.astype(np.int32)
     z_t_f = z_t - z_ti
-
     img0 = img[z_ti[:,1],z_ti[:,0],:] * (1 - z_t_f[:,0:1]) + img[z_ti[:,1],z_ti[:,0]+1,:] * (z_t_f[:,0:1])
     img1 = img[z_ti[:,1]+1,z_ti[:,0],:] * (1 - z_t_f[:,0:1]) + img[z_ti[:,1]+1,z_ti[:,0]+1,:] * (z_t_f[:,0:1])
     img_n = img0 * ( 1 - z_t_f[:,1:2]) + img1 * (z_t_f[:,1:2])
-    return img_n.reshape(mh, mw, 3)
+    return img_n.reshape(mh, mw, chn)
 
 convertfunc = {'nn':nearestNeighbor, 'bilinear':bilinear}
 
@@ -230,12 +235,57 @@ def transformImageH(img, H, method='bilinear'):
     @[in] method: interpolation method:nn/bilinear
     @[out] o:  transformed image
     """
+
     imgn, mx, my = wrapPerspective(img, H, convert=method, boundary=0, crop=True)
-    return imgn.astype(np.uint8), mx, my
+    if imgn.shape[2] == 3:
+        return imgn.astype(np.uint8), mx, my
+    return imgn, mx, my
 
-   
+class BLENDDIR(object):
+    LEFT = 0
+    RIGHT = 1
+    TOP = 2
+    DOWN = 3
+ 
+def addAlpha(img, method="Rate", rate=0.2, direction=BLENDDIR.LEFT, alphaOnly=False):
+    h, w, c = img.shape
+    rate += 1e-10
+    if not alphaOnly:
+        imgn = np.zeros((h, w, c+1),dtype=np.float32)
+        imgn[:, :, :c] = img
+        if method=='Rate':
+            print(rate)
+            imgn[:, :, c] = rate
+        elif method=='Gradient':
+            if direction==BLENDDIR.LEFT:
+                x = np.linspace(0, w-1, w)
+                y = np.linspace(0, h-1, h)
+                xx, yy = np.meshgrid(x,y)
+                br = (xx + yy)/(w + h) * 0.5
+            imgn[:, :, c] = br
+            print('not implement yet')
+        return imgn
+    alpha = np.zeros((h, w, 1),dtype=np.float32)
+    if method=='Rate':
+        print(rate)
+        alpha[:, :, 0] = rate
+    elif method=='Gradient':
+        rate = 0.5
+        if direction==BLENDDIR.LEFT:
+            x = np.linspace(0, w-1, w)
+            y = np.linspace(0, h-1, h)
+            xx, yy = np.meshgrid(x,y)
+            br = (xx + yy)/(w + h) * 0.5
+        elif direction==BLENDDIR.RIGHT:
+            x = np.linspace(w-1, 0, w)
+            y = np.linspace(h-1, 0, h)
+            xx, yy = np.meshgrid(x,y)
+            br = (xx + yy)/(w + h) * 0.5
+        alpha[:, :, 0] = br
+        print('not implement yet')
+    return alpha
 
-def stitchPanorama(imgQ, imgT, H, method='bilinear'):
+def stitchPanorama(imgQ, imgT, H, method='bilinear', blending=False, blendrate=0.2):
     """ stitchPanorama
     @brief: stitch two images by transformation matrix
     @[in] imgQ: numpy query image MxNx3
@@ -244,6 +294,8 @@ def stitchPanorama(imgQ, imgT, H, method='bilinear'):
     @[in] method: interpolation method:nn/bilinear
     @[out] o:  transformed image
     """
+    if blending:
+        imgT = addAlpha(imgT, method=blending, rate=blendrate)
     img_t, mx, my = transformImageH(imgT, H)
     ht, wt, ct = img_t.shape
     hq, wq, cq = imgQ.shape
@@ -267,6 +319,19 @@ def stitchPanorama(imgQ, imgT, H, method='bilinear'):
         tsx = mx; tsy = my; tex = mx+wt-1; tey = my+ht-1
     fw = max(tex+1, qex+1)
     fh = max(tey+1, qey+1)
+    if blending:
+        imgn = np.zeros((fh,fw,ct), dtype=np.float32)
+        # do blending here
+        imgn[qsy:qey+1,qsx:qex+1,:3] = imgQ[:,:,:3].astype(np.float32)
+        imgn[:,:, 3] += 1e-10
+        if blending == 'Rate':
+            imgn[qsy:qey+1,qsx:qex+1, 3] = 1 + 1e-10 - blendrate
+        else:
+            imgn[qsy:qey+1,qsx:qex+1, 3] = 1
+        base = (imgn[tsy:tey+1,tsx:tex+1,3:4] + img_t[:,:,3:4])
+        imgn[tsy:tey+1,tsx:tex+1,:3] = \
+        ((imgn[tsy:tey+1,tsx:tex+1,3:4]/base) * imgn[tsy:tey+1,tsx:tex+1,:3] + (img_t[:,:,3:4]/base) * img_t[:,:,:3])
+        return imgn[:,:,:3].astype(np.uint8)
     imgn = np.zeros((fh,fw,ct), dtype=np.uint8)
     imgn[tsy:tey+1,tsx:tex+1,:] = img_t
     imgn[qsy:qey+1,qsx:qex+1,:] = imgQ
