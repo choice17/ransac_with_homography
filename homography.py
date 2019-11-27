@@ -450,9 +450,14 @@ def example1():
     cv2.waitKey(0)
 
 
+def example2():
+    # http://www.cs.ucf.edu/~mtappen/cap5415/lecs/lec19.pdf
+    pass
+
 def main():
     #example0()
     example1()
+    #example2()
 
 if __name__ == '__main__':
     main()
