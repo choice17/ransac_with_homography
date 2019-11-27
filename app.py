@@ -72,16 +72,20 @@ def calcFixedAspectRatio(win_dim, tar_dim):
         if ey > h: sy -= h - ey ; ey = h
     return 1, sz, sx, sy, ex, ey
 
-def run_resize_image(image, cvwin, ww, hh):
+def run_resize_image(image, cvwin, ww, hh, lock=0):
     x, y, w, h = cv2.getWindowImageRect(cvwin)
     if (w > 0) and h > 0:
         suc, sz, sx, sy, ex, ey = calcFixedAspectRatio([w, h], [ww, hh])
         if suc:
             #DEBUG(suc, sz, sx, sy, ex, ey, (ww, hh), (x, y, w, h), image.shape, cvwin)
             img = cv2.resize(image, sz, interpolation=cv2.INTER_LINEAR)
-            image = np.zeros((h, w, 3), dtype=np.uint8)
-            image[sy:ey, sx:ex, :] = img
-    return image
+            if lock:
+                image = img
+                cv2.resizeWindow(cvwin, sz[0], sz[1])
+            else:
+                image = np.zeros((h, w, 3), dtype=np.uint8)
+                image[sy:ey, sx:ex, :] = img
+    return image, [w,h]
 
 class Control(object):
     SCANNER = 0
@@ -263,15 +267,24 @@ class App(object):
         INFO('App Running!')
         self.win.mainloop()
 
+class SIZE(object):
+    __slots__ = ('w','h')
+
+    def __init__(self):
+        self.w = self.h = 1
+
+    def set(self, sz):
+        self.w = sz[0]
+        self.h = sz[1]
 
 class MouseCB(object):
     def __init__(self):
         self.cur_time = 0
-        self.pt0 = None
-        self.pt1 = None
-        self.pt2 = None
-        self.pt3 = None
-        self.pt4 = None
+        self.pt0 = [10,10]
+        self.pt1 = [10,10]
+        self.pt2 = [10,10]
+        self.pt3 = [10,10]
+        self.pt4 = [0,0]
         self.cursor = None
         self.flags = 0
         self.param = 0
@@ -279,6 +292,27 @@ class MouseCB(object):
         self.cvtapp = None
         self.cvt_app = None
         self.cvt_up = 0
+        self.cvt_sz = SIZE()
+        self.cvt_sz_old = SIZE()
+
+    def setSize(self, sz):
+        if self.cvt_sz.w != sz[0] or self.cvt_sz.h != sz[1]:
+            self.pt0 = self.convert(sz, self.pt0)
+            self.pt1 = self.convert(sz, self.pt1)
+            self.pt2 = self.convert(sz, self.pt2)
+            self.pt3 = self.convert(sz, self.pt3)
+            self.cvt_sz_old = self.cvt_sz
+            self.cvt_sz.set(sz)
+
+    def convert(self, imgsz, pts):
+        return [int(pts[0]/self.cvt_sz.w*imgsz[0]), int(pts[1]/self.cvt_sz.h*imgsz[1])]
+
+    def getPtsList(self):
+        return [self.pt0, self.pt1, self.pt2, self.pt3]
+
+    def getPtsListConvert(self, imgsz):
+        k = [self.pt0, self.pt1, self.pt2, self.pt3]
+        return [self.convert(imgsz,_k) for _k in k]
 
     def play_cb(self, event, x, y, flags, param):
         self.cursor = [x, y]
@@ -301,6 +335,13 @@ class MouseCB(object):
         return np.array([[self.pt0[0], self.pt1[0], self.pt2[0], self.pt3[0]],
                          [self.pt0[1], self.pt1[1], self.pt2[1], self.pt3[1]],
                          [1, 1, 1, 1.0]])
+    def getResizeU(self):
+        global g_ctx
+        h, w, c = g_ctx.img.shape
+        u = self.getU()
+        u[0,:] = u[0,:] / self.cvt_sz.w * w
+        u[1,:] = u[1,:] / self.cvt_sz.h * h
+        return u
 
     def play_reset(self):
         self.cur_time = 0
@@ -310,7 +351,7 @@ class MouseCB(object):
         global g_ctx
         if (self.cur_time == 4 and g_ctx is not None):
             self.flags = 1
-            u = self.getU()
+            u = self.getResizeU()
             box = [SCANNERV[1, 2], SCANNERV[0, 2]]
             g_ctx.oimg = transformImage(g_ctx.img, u, SCANNERV, box=box)
             self.startCvApp(CvTApp)
@@ -360,7 +401,7 @@ class CvTApp(object):
         while (g_ctx.cvt_quit == 0):
             if (cv2.getWindowProperty(WINT, 0) < 0):
                  break
-            show_img = run_resize_image(img, WINT, ww, hh)
+            show_img, sz = run_resize_image(img, WINT, ww, hh)
             cv2.imshow(WINT, show_img)
             key = cv2.waitKey(30)
             if (key == ord('q')):
@@ -382,7 +423,7 @@ class CvPApp(object):
             if (cv2.getWindowProperty(WIN, 0) < 0):
                 break
             blk = blank.copy()
-            show_img = run_resize_image(blk, WIN, ww, hh)
+            show_img, sz = run_resize_image(blk, WIN, ww, hh)
             cv2.imshow(WIN, show_img)
             key = cv2.waitKey(30)
             if (key == ord('q')):
@@ -409,26 +450,20 @@ class CvApp(object):
                 break
             blk = blank.copy()
             i += 1
-            if cb.cur_time < 4:
-                k = []
-                k.append(cb.pt0)
-                k.append(cb.pt1)
-                k.append(cb.pt2)
-                k.append(cb.pt3)
-                k[cb.cur_time] = cb.cursor
-                for l in range(cb.cur_time):
-                    #print(k[l], k[l+1])
-                    cv2.line(blk, tuple(k[l]), tuple(k[l+1]), (0,170,0), 3)
-            if cb.cur_time == 4:
-                k = []
-                k.append([cb.pt0])
-                k.append([cb.pt1])
-                k.append([cb.pt2])
-                k.append([cb.pt3])
-                cv2.polylines(blk, np.array([k]) , 1, [0, 170,255], 10)
             #cv2.putText(blk, "%d" % i, 0.6, 1, 4, 1)
             #print(i, cb.cursor, cb.pt0, cb.pt1, cb.pt2, cb.pt3)
-            blk = run_resize_image(blk, WIN, ww, hh)
+            blk, sz = run_resize_image(blk, WIN, ww, hh, lock=1)
+            if cb.cur_time > 0:
+                k = cb.getPtsList()
+                if cb.cur_time < 4:
+                    k[cb.cur_time] = cb.cursor
+                    for l in range(cb.cur_time):
+                        #print(k[l], k[l+1])
+                        cv2.line(blk, tuple(k[l]), tuple(k[l+1]), (0,170,0), 3)
+                if cb.cur_time == 4:
+                    cv2.polylines(blk, np.array([k]) , 1, [0, 170,255], 10)
+            _, _, sw, sh = cv2.getWindowImageRect(WIN)
+            cb.setSize([sw,sh])
             cv2.imshow(WIN, blk)
             key = cv2.waitKey(30)
             if (key == ord('q')):
