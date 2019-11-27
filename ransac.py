@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from homography import calcHomographyLinear, calcHomography, stitchPanorama
+from homography import calcHomographyLinear, calcHomography, stitchPanorama, cylindericlMap
 
 def DEBUG(*args):
     if LVL >= 1:
@@ -239,30 +239,47 @@ def stitching(trainImg, queryImg,
                 n=4,
                 k=1000,
                 blending=False,
-                blendrate=0.2):
-    trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
-    queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
+                blendrate=0.2,
+                mode=None,
+                override=0,
+                cylinderT=1):
+    if override == 0:
+        #_trainImg = cv2.resize(trainImg, None,fx=0.5, fy=0.5)
+        #_queryImg = cv2.resize(queryImg, None,fx=0.5, fy=0.5)
+        #if cylinderT:
+        #    trainImg = cylindericlMap(trainImg)
+        #    queryImg = cylindericlMap(queryImg)
+        trainImg_gray = cv2.cvtColor(trainImg, cv2.COLOR_RGB2GRAY)
+        queryImg_gray = cv2.cvtColor(queryImg, cv2.COLOR_RGB2GRAY)
 
-    descriptor = cv2.ORB_create()
-    (kpsA, featuresA) = descriptor.detectAndCompute(trainImg_gray, None)
-    (kpsB, featuresB) = descriptor.detectAndCompute(queryImg_gray, None)
+        descriptor = cv2.ORB_create()
+        (kpsA, featuresA) = descriptor.detectAndCompute(trainImg_gray, None)
+        (kpsB, featuresB) = descriptor.detectAndCompute(queryImg_gray, None)
 
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    best_matches = bf.match(featuresA,featuresB)
-    matches = sorted(best_matches, key = lambda x:x.distance)
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        best_matches = bf.match(featuresA,featuresB)
+        matches = sorted(best_matches, key = lambda x:x.distance)
 
-    kpsA = np.float32([kp.pt for kp in kpsA])
-    kpsB = np.float32([kp.pt for kp in kpsB])
+        kpsA = np.float32([kp.pt for kp in kpsA])
+        kpsB = np.float32([kp.pt for kp in kpsB])
 
-    ptsA = np.float32([kpsA[m.queryIdx] for m in matches])
-    ptsB = np.float32([kpsB[m.trainIdx] for m in matches])
+        ptsA = np.float32([kpsA[m.queryIdx] for m in matches])
+        ptsB = np.float32([kpsB[m.trainIdx] for m in matches])
 
-    model = HomoModel(th=5,d=70,n=4)
-    ransac = RANSAC(model, k=1000)
-    H, inliers, _len = ransac.run([ptsA.T, ptsB.T], method=ransacMet)
+        if mode is None:
+            model = HomoModel(th=th,d=d,n=4)
+            ransac = RANSAC(model, k=k)
+            H, inliers, _len = ransac.run([ptsA.T, ptsB.T], method=ransacMet)
+        else:
+            reprojThresh = 4
+            (H, status) = cv2.findHomography(ptsA, ptsB, cv2.RANSAC,
+            reprojThresh)
 
-    h, w, c = queryImg.shape
-    imgn = stitchPanorama(queryImg, trainImg, H=H, blending=blending, blendrate=blendrate)
+        h, w, c = queryImg.shape
+        imgn = stitchPanorama(queryImg, trainImg, H=H, blending=blending, blendrate=blendrate)
+    else:
+        stitcher = cv2.Stitcher_create()#cv2.createStitcher() #v2.Stitcher_create()
+        (status, imgn) = stitcher.stitch([trainImg, queryImg])
     return imgn
 
 

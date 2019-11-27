@@ -337,6 +337,84 @@ def stitchPanorama(imgQ, imgT, H, method='bilinear', blending=False, blendrate=0
     imgn[qsy:qey+1,qsx:qex+1,:] = imgQ
     return imgn
 
+def cylindericalTransform(img, f, xc=0.5, yc=0.5, method='bilinear', wrap="fwd"):
+    """focal length typically 100-500 pixel value"""
+    # https://stackoverflow.com/questions/12017790/warp-image-to-appear-in-cylindrical-projection
+    # https://courses.cs.washington.edu/courses/cse576/16sp/Slides/10_ImageStitching.pdf
+    # https://cmsc426.github.io/pano/
+    # https://gist.github.com/royshil/0b21e8e7c6c1f46a16db66c384742b2b
+    h, w, c = img.shape
+    _xc = int(xc * w)-1
+    _yc = int(yc * h)-1
+    __xc = int((1-xc) * w)-1
+    __yc = int((1-yc) * h)-1
+    bnd = np.array([[0, 0, _xc, w-1, w-1, __xc, w-1, 0],
+               [0, _yc, 0,   __yc, 0, h-1, h-1, h-1],
+               [1., 1,   1,   1, 1, 1, 1,1]])
+    bnd_n = bnd.copy()
+    tmp = (bnd[:,0]-_xc)/f
+    bnd_n[:,0] = f * np.tan(tmp) + _xc
+    bnd_n[:,1] = (bnd[:,1] - _yc) / np.cos(tmp) + _yc
+
+    max_x = int(np.max(bnd_n[0,:]))
+    min_x = int(np.min(bnd_n[0,:]))
+    max_y = int(np.max(bnd_n[1,:]))
+    min_y = int(np.min(bnd_n[1,:]))
+    max_w = max_x - min_x + 1
+    max_h = max_y - min_y + 1
+
+    # Construct meshgrid for transformation
+    if (wrap == "backward"):
+        x = np.linspace(min_x, max_x, max_w)
+        y = np.linspace(min_y, max_y, max_h)
+        xv, yv = np.meshgrid(x, y)
+        z = np.dstack([xv, yv, np.ones((max_h, max_w))]).reshape([max_w * max_h , 3]).T
+
+        _z = np.empty(z.shape)
+        _z[:,0] = np.arctan((z[:,0] - _xc) / f) * f + _xc
+        tmp =  np.cos((_z[:,0]-_xc)/f)
+        _z[:,1] = ((z[:,1] - _yc) * tmp) + _xc
+
+        img_n = convertfunc[method](_z, img, h, w, max_h, max_w).astype(np.uint8)
+    else:
+        x = np.linspace(0, w-1, w)
+        y = np.linspace(0, h-1, h)
+        xv, yv = np.meshgrid(x, y)
+        z = np.dstack([xv, yv, np.ones((h, w))]).reshape([w * h , 3]).T
+        _z = z.copy()
+        tmp = (z[:,0]-_xc)/f
+        _z[:,0] = f * np.tan(tmp) + _xc
+        _z[:,1] = (z[:,1] - _yc) / np.cos(tmp) + _yc
+        img_n = convertfunc[method](_z, img, h, w, h, w).astype(np.uint8)
+    return img_n, min_x, min_y
+
+def cylindricalWarp(img, K):
+    """This function returns the cylindrical warp for a given image and intrinsics matrix K"""
+    h_,w_ = img.shape[:2]
+    # pixel coordinates
+    y_i, x_i = np.indices((h_,w_))
+    X = np.stack([x_i,y_i,np.ones_like(x_i)],axis=-1).reshape(h_*w_,3) # to homog
+    Kinv = np.linalg.inv(K) 
+    X = Kinv.dot(X.T).T # normalized coords
+    # calculate cylindrical coords (sin\theta, h, cos\theta)
+    A = np.stack([np.sin(X[:,0]),X[:,1],np.cos(X[:,0])],axis=-1).reshape(w_*h_,3)
+    B = K.dot(A.T).T # project back to image-pixels plane
+    # back from homog coords
+    B = B[:,:-1] / B[:,[-1]]
+    # make sure warp coords only within image bounds
+    B[(B[:,0] < 0) | (B[:,0] >= w_) | (B[:,1] < 0) | (B[:,1] >= h_)] = -1
+    B = B.reshape(h_,w_,-1)
+    
+    img_rgba = cv2.cvtColor(img,cv2.COLOR_BGR2BGRA) # for transparent borders...
+    # warp the image according to cylindrical coords
+    return cv2.remap(img_rgba, B[:,:,0].astype(np.float32), B[:,:,1].astype(np.float32), cv2.INTER_AREA, borderMode=cv2.BORDER_TRANSPARENT)
+  
+def cylindericlMap(img, f=1600):
+    h, w, c = img.shape
+    K = np.array([[f,0,w/2],[0,f,h/2],[0,0,1]])
+    img_cyl = cylindricalWarp(img, K)
+    return img_cyl
+
 def example0():
     imgFile = 'notebook.jpg'
     img = cv2.imread(imgFile)
@@ -365,10 +443,15 @@ def example0():
             exit(0)
 
 def example1():
-    pass
+    FILE = 'foto1A.jpg'
+    img = cv2.imread(FILE)
+    imgn, _, _ = cylindericalTransform(img, f=100)
+    cv2.imshow("T",imgn)
+    cv2.waitKey(0)
+
 
 def main():
-    example0()
+    #example0()
     example1()
 
 if __name__ == '__main__':

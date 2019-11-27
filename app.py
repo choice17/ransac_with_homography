@@ -320,7 +320,10 @@ class MouseCB(object):
     def play_apply_pano(self):
         global g_ctx
         if g_ctx.img is not None and g_ctx.img2 is not None:
-            g_ctx.oimg = stitching(g_ctx.img2, g_ctx.img, k=1500)
+            g_ctx.oimg = stitching(g_ctx.img2, g_ctx.img, 
+                blending="Rate", th=4, 
+                blendrate=0.2, d=95, k=1500, 
+                override=0)
             self.startCvApp(CvPApp)
         else:
             INFO('hit apply! Please select region first')
