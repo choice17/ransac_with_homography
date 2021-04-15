@@ -220,17 +220,18 @@ class NFOV():
 
 
 class GnomonicProjection(object):
-    def __init__(self, fov=[0.2,0.2], dst_w=600, dst_h=400):
+    def __init__(self, fov=[0.2,0.2], dst_w=600, dst_h=400, eqWidth=np.pi):
         self.width = dst_w
         self.height = dst_h
         self.src = None
         self.src_h  = self.src_w = None
         self.fov = fov
         self.pi2 = pi * 2
+        self.eqWidth=eqWidth
         self.setFov(fov)
 
     def dstCoordGen(self, dst_w, dst_h, fov):
-        fov = np.tan([i/2 for i in fov])
+        fov = np.tan(fov[0]*np.pi/2), np.tan(fov[1]*np.pi/2) 
         lin_x = np.linspace(-fov[1], fov[1], dst_w)
         lin_y = np.linspace(-fov[0], fov[0], dst_h)
         fovCoord = np.dstack(np.meshgrid(lin_x, -lin_y))
@@ -258,8 +259,8 @@ class GnomonicProjection(object):
         v = np.arctan2(coord[...,1], p)
 
         # remap equilrectangle
-        x = (u / self.pi2 + 0.5) * src_w - 0.5
-        y = (-v / np.pi + 0.5) * src_h - 0.5
+        x = (u / self.eqWidth + 0.5) * src_w - 0.5
+        y = (-v / pi + 0.5) * src_h - 0.5
         return x, y
         #return x.reshape(dst_h, dst_w), y.reshape(dst_h, dst_w)
         
@@ -304,24 +305,14 @@ class GnomonicProjection(object):
         self.fovCoord[:,:,:2] = self.dstCoordGen(self.width, self.height, self.fov)
 
     def project(self, center_point):
-        longn, latn = center_point
+        longn, latn = (center_point[0] * 2 - 1) * np.pi, \
+                      (center_point[1] * 2 - 1) * np.pi/2
 
         rotMat = GnomonicProjection.getRotateMat(longn,latn)
         coord = self.fovCoord.dot(rotMat)
         x, y = self.remap(coord, self.height, self.width, self.src_h, self.src_w)
   
         return self.wrapCoord(self.src, x, y)
-
-    def remap(self, coord, dst_h, dst_w, src_h, src_w):
-        # remap sphere
-        u = np.arctan2(coord[...,0], coord[...,2])
-        p = np.sqrt(coord[...,0] * coord[...,0] + coord[...,2] * coord[...,2])
-        v = np.arctan2(coord[...,1], p)
-
-        # remap equilrectangle
-        x = (u / self.pi2 + 0.5) * src_w - 0.5
-        y = (-v / np.pi + 0.5) * src_h - 0.5
-        return x, y
 
     def projectv2(self, center_point):
         longn, latn = center_point
@@ -419,13 +410,15 @@ def calc_center_pointv2(c, x, y):
 
 def calc_fovv2(fov, v):
     fov = [i+v for i in fov]
-    #fov = np.clip(fov, 0.05, 0.8)
+    fov = np.clip(fov, 0.05, 0.5)
+    print("325", fov)
     return fov
 
 def case3():
-    img = cv2.imread('images/360.jpg')
+    img = cv2.imread('images/sample.png')
     fov = [0.3,0.3]
-    nfov = NFOV(600,600,v2=1,fov=fov,eqWidth=pi)
+    EQW = pi/2
+    nfov = NFOV(600,600,v2=1,fov=fov,eqWidth=EQW)
     # camera center point (valid range [0,1])
     import time
     nfov.prepare(img)
@@ -434,7 +427,7 @@ def case3():
     frame = nfov.toNFOV3(center_point)
     print(time.time() - ti)
     cv2.namedWindow("T", cv2.WINDOW_NORMAL)
-    s = 0.05
+    s = 0.01
     while 1:
         cv2.imshow("T", frame)
         a = cv2.waitKey(30)
@@ -462,7 +455,7 @@ def case3():
                 fov = calc_fov(fov, -s)
             else:
                 fov = calc_fov(fov, s)
-            nfov = NFOV(600,600,v2=1,fov=fov,eqWidth=pi)
+            nfov = NFOV(600,600,v2=1,fov=fov,eqWidth=EQW)
             nfov.prepare(img)
             ch = 1
         if ch:
@@ -489,15 +482,16 @@ def case4():
 
 def case5():
     img = cv2.imread('images/360.jpg')
-    fov = [0.7,0.7]
-    nfov = GnomonicProjection(fov, dst_w=600, dst_h=600)
+    fov = [0.3,0.3]
+    EQW = np.pi*2 # 180
+    nfov = GnomonicProjection(fov, dst_w=600, dst_h=600,eqWidth=EQW)
     nfov.prepare(img)
     center_point = np.array([0.5, 0.5])
     frame = nfov.project(center_point)
     ti = time.time()
     print(time.time() - ti)
     cv2.namedWindow("T", cv2.WINDOW_NORMAL)
-    s = 0.2
+    s = 0.01
     while 1:
         cv2.imshow("T", frame)
         a = cv2.waitKey(30)
@@ -525,12 +519,62 @@ def case5():
                 fov = calc_fovv2(fov, -s)
             else:
                 fov = calc_fovv2(fov, s)
-            nfov = GnomonicProjection(fov, dst_w=600, dst_h=600)
+            nfov = GnomonicProjection(fov, dst_w=600, dst_h=600, eqWidth=EQW)
             nfov.prepare(img)
             ch = 1
         if ch:
             ti = time.time()
             frame = nfov.project(center_point)
             print(time.time() - ti)
+
+
+def case6():
+    cap = cv2.VideoCapture("VR-video")
+    fov = [0.3,0.3]
+    nfov = GnomonicProjection(fov, dst_w=600, dst_h=600, eqWidth=np.pi)
+    center_point = np.array([0.5, 0.5])
+    
+    ti = time.time()
+    print(time.time() - ti)
+    cv2.namedWindow("T", cv2.WINDOW_NORMAL)
+    s = 0.05
+    while 1:
+        ret, frame = cap.read()
+        nfov.prepare(frame)
+        frame = nfov.project(center_point)
+        cv2.imshow("T", frame)
+        a = cv2.waitKey(30)
+        ch = 0
+        if a == ord('q'):
+            break
+        elif a in [ord('j'), ord('4')]:
+            center_point, ch = calc_center_pointv2(center_point, -s, 0)
+        elif a in [ord('i'), ord('8')]:
+            center_point, ch = calc_center_pointv2(center_point, 0, -s)
+        elif a in [ord('l'), ord('6')]:
+            center_point, ch = calc_center_pointv2(center_point, s, 0)
+        elif a in [ord('k'), ord('2')]:
+            center_point, ch = calc_center_pointv2(center_point, 0, s)
+        elif a in [ord('u'), ord('7')]:
+            center_point, ch = calc_center_pointv2(center_point, -s, -s)
+        elif a in [ord('o'), ord('9')]:
+            center_point, ch = calc_center_pointv2(center_point, s, -s)
+        elif a in [ord('m'), ord('1')]:
+            center_point, ch = calc_center_pointv2(center_point, -s, s)
+        elif a in [ord('.'), ord('3')]:
+            center_point, ch = calc_center_pointv2(center_point, s, s)
+        elif a in [ord('-'), ord('+')]:
+            if a == ord('-'):
+                fov = calc_fovv2(fov, -s)
+            else:
+                fov = calc_fovv2(fov, s)
+            nfov = GnomonicProjection(fov, dst_w=600, dst_h=600)
+            nfov.prepare(frame)
+            ch = 1
+        if ch:
+            ti = time.time()
+            frame = nfov.project(center_point)
+            print(time.time() - ti)
+
 if __name__ == '__main__':
     case5()
