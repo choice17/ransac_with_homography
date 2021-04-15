@@ -268,15 +268,21 @@ class GnomonicProjection(object):
         src_h, src_w, _ = src.shape
         uf = coord_x
         vf = coord_y
+        
 
-        mask = uf < 0
-        uf[mask] = src_w + uf[mask]
-        mask = uf >= (src_w - 2)
-        uf[mask] -= (src_w - 2)
-        mask = vf < 0
-        vf[mask] = src_h + vf[mask]
-        mask = vf >= (src_h - 2)
-        vf[mask] -= (src_h - 2)
+        if 1:
+            mask = (uf < 0) | (uf >= (self.src_w - 2)) | (vf < 0) | (vf > (self.src_h - 2))
+            uf[mask] = 0
+            vf[mask] = 0
+        else:
+            mask = uf < 0
+            uf[mask] = src_w + uf[mask]
+            mask = uf >= (src_w - 2)
+            uf[mask] -= (src_w - 2)
+            mask = vf < 0
+            vf[mask] = src_h + vf[mask]
+            mask = vf >= (src_h - 2)
+            vf[mask] -= (src_h - 2)
 
         """
         bilinear interpolation
@@ -410,12 +416,12 @@ def calc_center_pointv2(c, x, y):
 
 def calc_fovv2(fov, v):
     fov = [i+v for i in fov]
-    fov = np.clip(fov, 0.05, 0.5)
+    fov = np.clip(fov, 0.05, 1.2)
     print("325", fov)
     return fov
 
 def case3():
-    img = cv2.imread('images/sample.png')
+    img = cv2.imread('images/360.jpg')
     fov = [0.3,0.3]
     EQW = pi/2
     nfov = NFOV(600,600,v2=1,fov=fov,eqWidth=EQW)
@@ -481,9 +487,9 @@ def case4():
         Image.fromarray(o).show()
 
 def case5():
-    img = cv2.imread('images/360.jpg')
-    fov = [0.3,0.3]
-    EQW = np.pi*2 # 180
+    img = cv2.imread('images/sample.png')
+    fov = [0.7,0.7]
+    EQW = np.pi # 180
     nfov = GnomonicProjection(fov, dst_w=600, dst_h=600,eqWidth=EQW)
     nfov.prepare(img)
     center_point = np.array([0.5, 0.5])
