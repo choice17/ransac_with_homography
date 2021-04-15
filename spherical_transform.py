@@ -144,7 +144,7 @@ def sperical_transform2(dst_resoln, src, src_rx, src_ry, cx, cy, magic_r=0, scal
     pass
 
 def example1():
-    fn = "sphere_image.jpg"
+    fn = "images/sphere_image.jpg"
     src = cv2.imread(fn)[:,:,::-1]
     info("src image ", src.shape)
     dst_resoln = [1200,2400]
@@ -157,7 +157,7 @@ def example1():
     Image.fromarray(dst_img).show()
 
 def example2():
-    fn = "indoor_fisheye.jpg"
+    fn = "images/indoor_fisheye.jpg"
     # 4000x2666
     src = cv2.imread(fn)[:,:,::-1]
     info("src image ", src.shape)
@@ -171,7 +171,7 @@ def example2():
     Image.fromarray(dst_img).show()
 
 def example3():
-    fn = "indoor_crop_fisheye.jpg"
+    fn = "images/indoor_crop_fisheye.jpg"
     # 2141x1457
     src = cv2.imread(fn)[:,:,::-1]
     info("src image ", src.shape)
