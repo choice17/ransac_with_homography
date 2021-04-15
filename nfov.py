@@ -220,7 +220,7 @@ class NFOV():
 
 
 class GnomonicProjection(object):
-    def __init__(self, fov=[0.2,0.2], dst_w=600, dst_h=400, eqWidth=np.pi):
+    def __init__(self, fov=[0.2,0.2], dst_w=600, dst_h=400, eqWidth=np.pi, norepeat=1):
         self.width = dst_w
         self.height = dst_h
         self.src = None
@@ -229,6 +229,7 @@ class GnomonicProjection(object):
         self.pi2 = pi * 2
         self.eqWidth=eqWidth
         self.setFov(fov)
+        self.norepeat = norepeat
 
     def dstCoordGen(self, dst_w, dst_h, fov):
         fov = np.tan(fov[0]*np.pi/2), np.tan(fov[1]*np.pi/2) 
@@ -270,7 +271,8 @@ class GnomonicProjection(object):
         vf = coord_y
         
 
-        if 1:
+        if self.norepeat: # do not repeat
+            src[0,0,:] = 0
             mask = (uf < 0) | (uf >= (self.src_w - 2)) | (vf < 0) | (vf > (self.src_h - 2))
             uf[mask] = 0
             vf[mask] = 0
@@ -488,7 +490,7 @@ def case4():
 
 def case5():
     img = cv2.imread('images/sample.png')
-    fov = [0.7,0.7]
+    fov = [0.7,0.3]
     EQW = np.pi # 180
     nfov = GnomonicProjection(fov, dst_w=600, dst_h=600,eqWidth=EQW)
     nfov.prepare(img)
